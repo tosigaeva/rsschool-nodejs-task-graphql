@@ -46,10 +46,8 @@ export const ProfileType = new GraphQLObjectType({
     yearOfBirth: { type: new GraphQLNonNull(GraphQLInt) },
     memberType: {
       type: new GraphQLNonNull(MemberTypeType),
-      resolve: async (profile, _, { prisma }) => {
-        return prisma.memberType.findUnique({
-          where: { id: profile.memberTypeId },
-        });
+      resolve: async (profile, _, { loaders }) => {
+        return loaders.memberTypeLoader.load(profile.memberTypeId);
       },
     },
   }),
@@ -63,46 +61,26 @@ export const UserType = new GraphQLObjectType({
     balance: { type: new GraphQLNonNull(GraphQLFloat) },
     profile: {
       type: ProfileType,
-      resolve: async (user, _, { prisma }) => {
-        return prisma.profile.findUnique({
-          where: { userId: user.id },
-        });
+      resolve: async (user, _, { loaders }) => {
+        return loaders.profileByUserIdLoader.load(user.id);
       },
     },
     posts: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(PostType))),
-      resolve: async (user, _, { prisma }) => {
-        return prisma.post.findMany({
-          where: { authorId: user.id },
-        });
+      resolve: async (user, _, { loaders }) => {
+        return loaders.postsByAuthorIdLoader.load(user.id);
       },
     },
     userSubscribedTo: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UserType))),
-      resolve: async (user, _, { prisma }) => {
-        return prisma.user.findMany({
-          where: {
-            subscribedToUser: {
-              some: {
-                subscriberId: user.id,
-              },
-            },
-          },
-        });
+      resolve: async (user, _, { loaders }) => {
+        return loaders.userSubscribedToLoader.load(user.id);
       },
     },
     subscribedToUser: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UserType))),
-      resolve: async (user, _, { prisma }) => {
-        return prisma.user.findMany({
-          where: {
-            userSubscribedTo: {
-              some: {
-                authorId: user.id,
-              },
-            },
-          },
-        });
+      resolve: async (user, _, { loaders }) => {
+        return loaders.subscribedToUserLoader.load(user.id);
       },
     },
   }),

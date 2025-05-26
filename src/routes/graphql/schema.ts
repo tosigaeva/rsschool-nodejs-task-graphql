@@ -5,6 +5,7 @@ import {
   GraphQLNonNull,
   GraphQLString,
 } from 'graphql';
+import { parseResolveInfo } from 'graphql-parse-resolve-info';
 import { UUIDType } from './types/uuid.js';
 import {
   MemberTypeType,
@@ -43,8 +44,43 @@ export const createSchema = (prisma) => {
       },
       users: {
         type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(UserType))),
-        resolve: async () => {
-          return prisma.user.findMany();
+        resolve: async (_, args, context, info) => {
+          const { prisma, loaders } = context;
+
+          const parsedResolveInfo = parseResolveInfo(info);
+
+          const fieldsByTypeName = parsedResolveInfo?.fieldsByTypeName as Record<string, Record<string, any>> | undefined;
+          const includeUserSubscribedTo = fieldsByTypeName?.User?.userSubscribedTo !== undefined;
+          const includeSubscribedToUser = fieldsByTypeName?.User?.subscribedToUser !== undefined;
+
+          const include = {
+            ...(includeUserSubscribedTo && { userSubscribedTo: true }),
+            ...(includeSubscribedToUser && { subscribedToUser: true }),
+          };
+
+          const users = await prisma.user.findMany({
+            include: Object.keys(include).length > 0 ? include : undefined,
+          });
+
+          users.forEach(user => {
+            loaders.userLoader.prime(user.id, user);
+
+            if (includeUserSubscribedTo && user.userSubscribedTo) {
+              const subscribedToUsers = user.userSubscribedTo.map(sub =>
+                  users.find(u => u.id === sub.authorId)
+              ).filter(Boolean);
+              loaders.userSubscribedToLoader.prime(user.id, subscribedToUsers);
+            }
+
+            if (includeSubscribedToUser && user.subscribedToUser) {
+              const subscribers = user.subscribedToUser.map(sub =>
+                  users.find(u => u.id === sub.subscriberId)
+              ).filter(Boolean);
+              loaders.subscribedToUserLoader.prime(user.id, subscribers);
+            }
+          });
+
+          return users;
         },
       },
       user: {
@@ -52,10 +88,8 @@ export const createSchema = (prisma) => {
         args: {
           id: { type: new GraphQLNonNull(UUIDType) },
         },
-        resolve: async (_, { id }) => {
-          return prisma.user.findUnique({
-            where: { id },
-          });
+        resolve: async (_, { id }, { loaders }) => {
+          return loaders.userLoader.load(id);
         },
       },
       posts: {
